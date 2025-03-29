@@ -1,5 +1,6 @@
 # payments/views.py
-import stripe
+import json
+import requests
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -10,70 +11,106 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from .utils import send_ticket_email
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+
+# PayPal API Configuration
+PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
+PAYPAL_SECRET = settings.PAYPAL_SECRET
+PAYPAL_API_BASE = 'https://api-m.sandbox.paypal.com'  # Change to live for production
 
 
-class CreatePaymentIntent(APIView):
+def get_paypal_access_token():
+    """Retrieve PayPal access token"""
+    auth_response = requests.post(
+        f"{PAYPAL_API_BASE}/v1/oauth2/token",
+        auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET),
+        data={'grant_type': 'client_credentials'}
+    )
+    if auth_response.status_code == 200:
+        return auth_response.json()['access_token']
+    else:
+        raise Exception("Unable to get PayPal access token")
+
+
+class CreatePayPalOrder(APIView):
     def post(self, request):
         amount = request.data.get('amount')
         if amount is None:
             return Response({"error": "Amount not provided"}, status=400)
 
-        # Convert amount to cents (Stripe expects the amount in the smallest currency unit)
-        amount_in_cents = int(amount * 100)
+        access_token = get_paypal_access_token()
 
-        try:
-            # Create a payment intent
-            intent = stripe.PaymentIntent.create(
-                amount=amount_in_cents,
-                currency='php',
-            )
-            return Response({'clientSecret': intent.client_secret}, status=200)
-        except Exception as e:
-            return Response({"error": str(e)}, status=400)
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
+
+        # Create a PayPal order
+        order_data = {
+            "intent": "CAPTURE",
+            "purchase_units": [
+                {
+                    "amount": {
+                        "currency_code": "PHP",
+                        "value": str(amount)
+                    }
+                }
+            ]
+        }
+
+        response = requests.post(
+            f"{PAYPAL_API_BASE}/v2/checkout/orders",
+            headers=headers,
+            json=order_data
+        )
+
+        if response.status_code == 201:
+            order_info = response.json()
+            return Response({"id": order_info['id'], "status": order_info['status']})
+        else:
+            return Response({"error": "Error creating PayPal order"}, status=response.status_code)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class PaymentWebhookAPI(APIView):
+class PayPalWebhookAPI(APIView):
     def post(self, request):
         payload = request.body
-        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        headers = request.META
+        event_data = json.loads(payload)
 
-        try:
-            # Verify the webhook signature
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
-            )
-        except ValueError:
-            # Invalid payload
-            return Response(status=400)
-        except stripe.error.SignatureVerificationError:
-            # Invalid signature
-            return Response(status=400)
+        # Verify the webhook event (optional: you can implement a signature verification here)
+        event_type = event_data.get('event_type', '')
 
-        # Handle the event
-        if event.get('type') == 'payment_intent.succeeded':
-            payment_intent = event['data']['object']
+        if event_type == 'CHECKOUT.ORDER.APPROVED':
+            order_id = event_data['resource']['id']
 
             try:
-                # Find the order using the payment_intent_id
-                order = Order.objects.get(payment_intent_id=payment_intent['id'])
+                # Find the order using the order_id
+                order = Order.objects.get(payment_intent_id=order_id)
                 # Update order status to 'paid'
                 order.status = 'paid'
                 order.save()
+
+                # Send ticket email
+                ticket_info = {
+                    "user_name": order.user.get_full_name(),
+                    "user_email": order.user.email,
+                    "Concert_name": "Dune: Part Two",  # Replace with dynamic movie name
+                    "showtime": "March 30, 2025 - 7:00 PM"  # Replace with dynamic time
+                }
+                send_ticket_email(ticket_info["user_email"], ticket_info)
+
             except Order.DoesNotExist:
                 return Response({'error': 'Order not found'}, status=404)
 
         return Response(status=200)
 
+
 def payment_success(request):
-    """Handles successful payments and sends a ticket email."""
-    # Example ticket info (replace with actual data from your system)
+    """Handles successful PayPal payments and sends a ticket email."""
     ticket_info = {
         "user_name": request.user.get_full_name(),
         "user_email": request.user.email,
-        "movie_name": "Dune: Part Two",
-        "seat_number": "A12",
+        "Concert_name": "Dune: Part Two",
         "showtime": "March 30, 2025 - 7:00 PM"
     }
 

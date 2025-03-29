@@ -17,7 +17,6 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from tickets.views import TicketAvailabilityAPI, ReserveTicketsAPI
-from payments.views import CreatePaymentIntent, PaymentWebhookAPI
 from orders.views import CreateOrderAPI, OrderHistoryAPI
 from users.views import CustomTokenObtainPairView, RegisterView 
 from tickets.views import TicketTypeListView
@@ -45,8 +44,5 @@ urlpatterns = [
     path("api/users/", include("users.urls")),  # Include users app URLs
 
     # Payments
-    path('api/payments/create-intent/', 
-         CreatePaymentIntent.as_view(), name='create-payment-intent'),
-    path('api/payments/webhook/', 
-         PaymentWebhookAPI.as_view(), name='payment-webhook'),
+   path('payments/', include('payments.urls')),  
 ]

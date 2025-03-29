@@ -184,7 +184,9 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-STRIPE_SECRET_KEY = os.environ.get('pk_test_51R2z2aECWNnJTaVHowVR8tPrPbT5xuFe2Q0ma0UaGC77PNSJQ0cruFqjaZVe5REFCyKizVjCRXVJbnW60JhaYRSf00NOQcvQPWY', 'sk_test_51R2z2aECWNnJTaVHiWLEhwa9e9aSBKMqWuSgTVvfz5T2yiD1Zy5zWT4bAWbndIShIMLOEPe3RLODnsgqqvrOlTlG003dTaTe7bkey')
+PAYPAL_CLIENT_ID = 'AVDCZfrsEkhe53x4R_mZoJNfG3CvK_8miHJZsno64tvQSgLijS_Uglednat1y9Jczot0yDlrMSqOVWYr'
+PAYPAL_SECRET = 'EF6fPC2JOyQ1H14dcFZsN0bbaJN6BBFZcVLPlThEuRJyarprqgzh9ESn7E_Z4-t-kEOOw5rPF75tXjmF'
+
 AUTH_USER_MODEL = 'base.CustomUser'
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
